@@ -3,7 +3,7 @@
 
 using TouchEvent = void (*)();
 
-constexpr auto stableScanCount = 10;
+constexpr auto stableScanCount = 3;
 constexpr auto touchPin = 15;
 class TouchDriver {
 	bool isTouched = false;
@@ -56,7 +56,7 @@ private:
 				++count;
 			}
 		}
-		return count > 5;
+		return count == stableScanCount;
 	}
 
 	void FireEvent() const {
@@ -88,23 +88,17 @@ void turnLampOff() {
 	ring.show();
 }
 
-void toggleLamp() {
-	static auto isOn = false;
-	if (isOn) {
-		isOn = false;
-		turnLampOff();
-	} else {
-		isOn = true;
-		const auto teal = ring.Color(0, 0x80, 0x80);
-		showUniformColor(teal);
-	}
-}
-
 TouchDriver touchDriver;
 
 void setup() {
 	touchDriver.Setup();
-	touchDriver.OnTouched(toggleLamp);
+	touchDriver.OnTouched([](){
+		const auto teal = ring.Color(0, 0x80, 0x80);
+		showUniformColor(teal);
+	});
+	touchDriver.OnReleased([](){
+		turnLampOff();
+	});
 	ring.begin();
 	turnLampOff();
 }
