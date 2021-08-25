@@ -74,7 +74,7 @@ private:
 
 constexpr auto ledPin = 2;
 constexpr auto ledCount = 24;
-Adafruit_NeoPixel ring{ledCount, ledPin/*, NEO_GRB + NEO_KHZ800*/};
+Adafruit_NeoPixel ring{ledCount, ledPin};
 
 void showUniformColor(uint32_t color) {
 	for (auto index = 0; index < ledCount; ++index) {
