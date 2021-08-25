@@ -1,30 +1,52 @@
 #include "Arduino.h"
 #include "Adafruit_NeoPixel.h"
 
-constexpr auto ledPin = 2;
-constexpr auto ledCount = 24;
-Adafruit_NeoPixel ring(ledCount, ledPin, NEO_GRB + NEO_KHZ800);
+using TouchEvent = void (*)();
 
 constexpr auto stableScanCount = 10;
-class TouchState {
+constexpr auto touchPin = 15;
+class TouchDriver {
 	bool isTouched = false;
 	bool isTouchedScan[stableScanCount];
 	int nextIndex = 0;
+	TouchEvent handleTouched = nullptr;
+	TouchEvent handleReleased = nullptr;
 
 public:
-	TouchState() {
+	TouchDriver() {
 		for (auto index = 0; index < stableScanCount; ++index) {
 			isTouchedScan[index] = false;
 		}
 	}
 
+	void Setup() {
+		pinMode(touchPin, INPUT_PULLUP);
+	}
+
+	void Loop() {
+		Scan();
+		const auto wasTouched = isTouched;
+		isTouched = GetStableScan();
+		const auto isChangingTouchedState = wasTouched != isTouched;
+		if (isChangingTouchedState) {
+			FireEvent();
+		}
+	}
+
+	void OnTouched(TouchEvent handler) {
+		handleTouched = handler;
+	}
+
+	void OnReleased(TouchEvent handler) {
+		handleReleased = handler;
+	}
+
+private:
 	void Scan() {
-		constexpr auto touchPin = 15;
 		constexpr auto touchMin = 15;
 		const auto currentTouch = touchRead(touchPin);
 		isTouchedScan[nextIndex] = currentTouch < touchMin;
 		nextIndex = (nextIndex + 1) % stableScanCount;
-		isTouched = GetStableScan();
 	}
 
 	bool GetStableScan() const {
@@ -37,73 +59,58 @@ public:
 		return count > 5;
 	}
 
-	bool IsTouched() const {
-		return isTouched;
+	void FireEvent() const {
+		if (isTouched) {
+			if (handleTouched) {
+				handleTouched();
+			}
+		} else {
+			if (handleReleased) {
+				handleReleased();
+			}
+		}
 	}
 };
 
+constexpr auto ledPin = 2;
+constexpr auto ledCount = 24;
+Adafruit_NeoPixel ring{ledCount, ledPin/*, NEO_GRB + NEO_KHZ800*/};
+
+void showUniformColor(uint32_t color) {
+	for (auto index = 0; index < ledCount; ++index) {
+		ring.setPixelColor(index, color);
+	}
+	ring.show();
+}
+
+void turnLampOff() {
+	ring.clear();
+	ring.show();
+}
+
+void toggleLamp() {
+	static auto isOn = false;
+	if (isOn) {
+		isOn = false;
+		turnLampOff();
+	} else {
+		isOn = true;
+		const auto teal = ring.Color(0, 0x80, 0x80);
+		showUniformColor(teal);
+	}
+}
+
+TouchDriver touchDriver;
+
 void setup() {
+	touchDriver.Setup();
+	touchDriver.OnTouched(toggleLamp);
 	ring.begin();
-	ring.clear();
-	ring.show();
+	turnLampOff();
 }
-
-void test() {
-	for (auto index = 0; index < ledCount; ++index) {
-		ring.setPixelColor(index, ring.Color(0, 0x80, 0x80));
-	}
-	ring.show();
-}
-
-void rainbowCycle(int wait, uint32_t& pixelHueOffset, uint8_t brightness) {
-	constexpr auto maxHue = 65536;
-	constexpr auto maxSaturation = 255;
-	for (auto index = 0; index < ledCount; ++index) {
-		auto pixelHueValue = pixelHueOffset + (index * maxHue / ledCount);
-		ring.setPixelColor(index, ring.gamma32(ring.ColorHSV(pixelHueValue, maxSaturation, brightness)));
-	}
-	ring.show();
-	delay(wait);
-	constexpr auto hueStep = 255;
-	pixelHueOffset += hueStep;
-}
-
-void rainbow(int wait) {
-	uint32_t pixelHueOffset = 0;
-	constexpr auto maxBrightness = 255;
-	auto brightness = 0;
-	while (++brightness < maxBrightness) {
-		rainbowCycle(wait, pixelHueOffset, brightness);
-	}
-	auto start = millis();
-	const auto minRainbowMs = 10000;
-	while (millis() - start < minRainbowMs) {
-		rainbowCycle(wait, pixelHueOffset, brightness);
-	}
-	while (--brightness > 0) {
-		rainbowCycle(wait, pixelHueOffset, brightness);
-	}
-	ring.clear();
-	ring.show();
-}
-
-constexpr auto loopIntervalMs = 20;
 
 void loop() {
-	static auto isOn = false;
-	static TouchState touchState;
-	static bool wasTouched = false;
-	touchState.Scan();
-	if (wasTouched != touchState.IsTouched()) {
-		wasTouched = touchState.IsTouched();
-		if (isOn) {
-			isOn = false;
-			ring.clear();
-			ring.show();
-		} else {
-			isOn = true;
-			test();
-		}
-	}
+	touchDriver.Loop();
+	constexpr auto loopIntervalMs = 20;
 	delay(loopIntervalMs);
 }
